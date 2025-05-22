@@ -3,10 +3,13 @@ import matplotlib.pyplot as plt
 import random
 import math
 
+CONST_SEED = 42
+
 # randomising permutaiton table
 def generate_permutation():
+    rng = random.Random(CONST_SEED)
     perm = list(range(256))
-    random.shuffle(perm)
+    rng.shuffle(perm)
     return perm * 2  # duplicate for overflow handling
 
 # fading function, used for smooth transitions
