@@ -1,3 +1,7 @@
 # VSCode settings
 .vscode/
 *.code-workspace
+
+# PyCharm
+.idea/
+*.iml
