@@ -1,0 +1,75 @@
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl', { alpha: false, preserveDrawingBuffer: true });
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+
+// === Shader loading ===
+async function loadShaderSource(url) {
+  const response = await fetch(url);
+  return await response.text();
+}
+
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    throw new Error('Shader compile failed');
+  }
+  return shader;
+}
+
+function createProgram(vsSource, fsSource) {
+  const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+  const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    throw new Error('Program link failed');
+  }
+  return program;
+}
+
+// === Main Init ===
+(async function init() {
+  const vsSource = await loadShaderSource('shaders/vertex.glsl');
+  const fsSource = await loadShaderSource('shaders/fragment.glsl');
+  const program = createProgram(vsSource, fsSource);
+  gl.useProgram(program);
+
+  // Fullscreen quad
+  const vertices = new Float32Array([
+    -1, -1,
+     1, -1,
+    -1,  1,
+     1, -1,
+     1,  1,
+    -1,  1,
+  ]);
+
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+  const aPosition = gl.getAttribLocation(program, 'aPosition');
+  gl.enableVertexAttribArray(aPosition);
+  gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+
+
+  // Animation loop
+  function render() {
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0); // Background color
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
