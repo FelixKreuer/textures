@@ -4,7 +4,6 @@ const gl = canvas.getContext('webgl', { alpha: false, preserveDrawingBuffer: tru
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-
 // === Shader loading ===
 async function loadShaderSource(url) {
   const response = await fetch(url);
@@ -61,12 +60,18 @@ function createProgram(vsSource, fsSource) {
   gl.enableVertexAttribArray(aPosition);
   gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
+  // Get location of uResolution
+  const uResolution = gl.getUniformLocation(program, 'uResolution');
 
   // Animation loop
   function render() {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Background color
     gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Set the uResolution uniform
+    gl.uniform2f(uResolution, canvas.width, canvas.height);
+
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);
   }
