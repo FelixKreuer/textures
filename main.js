@@ -66,14 +66,24 @@ function createProgram(vsSource, fsSource) {
   const uRoughnessLoc = gl.getUniformLocation(program, 'uRoughness');
   const uDistortionLoc = gl.getUniformLocation(program, 'uDistortion');
   const uResolution = gl.getUniformLocation(program, 'uResolution');
+  const uMappingScaleLoc = gl.getUniformLocation(program, 'uMappingScale');
+  const uMappingRotationLoc = gl.getUniformLocation(program, 'uMappingRotation');
+  const uMappingTranslationLoc = gl.getUniformLocation(program, 'uMappingTranslation');
 
   // === Set Default Uniform Values ===
   const settings = {
-    scale: 3.5,
-    detail: 15.0,
+    scale: 7.0,
+    detail: 150.0,
     roughness: 0.8,
     distortion: 0.5,
   };
+  const mapping = {
+  scaleX: 0.45,
+  scaleY: 5.5,
+  rotation: 0.0,        // in radians
+  translateX: 0.0,
+  translateY: 0.0,
+};
 
   // Animation loop
   function render() {
@@ -87,6 +97,9 @@ function createProgram(vsSource, fsSource) {
     gl.uniform1f(uRoughnessLoc, settings.roughness);
     gl.uniform1f(uDistortionLoc, settings.distortion);
     gl.uniform2f(uResolution, gl.canvas.width, gl.canvas.height);
+    gl.uniform2f(uMappingScaleLoc, mapping.scaleX, mapping.scaleY);
+    gl.uniform1f(uMappingRotationLoc, mapping.rotation);
+    gl.uniform2f(uMappingTranslationLoc, mapping.translateX, mapping.translateY);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);

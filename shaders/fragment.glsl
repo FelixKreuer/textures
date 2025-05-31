@@ -1,22 +1,29 @@
 precision mediump float;
 
+// blender noise texture options
 uniform vec2 uResolution;
 uniform float uScale;
 uniform float uDetail;
 uniform float uRoughness;
 uniform float uDistortion;
 
-// Hash function to generate pseudo-random gradients
+// parameters for first mapping node
+uniform vec2 uMappingScale;
+uniform float uMappingRotation;
+uniform vec2 uMappingTranslation;
+
+// generates pseudo random vectors
 vec2 randomGradient(vec2 p) {
     float angle = fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123) * 6.28318;
     return vec2(cos(angle), sin(angle));
 }
 
-// Interpolation function (smoothstep-style)
+// smoothstep function to fade values
 float fade(float t) {
     return t * t * (3.0 - 2.0 * t);
 }
-// 2D gradient noise
+
+// function for perlin noise
 float perlinNoise(vec2 uv) {
     vec2 i0 = floor(uv);
     vec2 f0 = fract(uv);
@@ -43,6 +50,7 @@ float perlinNoise(vec2 uv) {
     return mix(a, b, ty);
 }
 
+// fbm function to represent blender noise texture, uses perlin noise 
 float fbm(vec2 uv) {
     float value = 0.0;
     float amplitude = 0.5;
@@ -77,7 +85,7 @@ float fbm(vec2 uv) {
     return value;
 }
 
-
+// function to generate a voronoi pattenr
 float voronoi(vec2 uv) {
     vec2 cell = floor(uv);
     vec2 fractUV = fract(uv);
@@ -93,19 +101,40 @@ float voronoi(vec2 uv) {
     return minDist;
 }
 
+// Function that applies transformations, like in blender
+vec2 applyMapping(vec2 uv, vec2 scale, float rotation, vec2 translation) {
+    // translation to the center
+    uv -= 0.5;
+
+    // scaling
+    uv *= scale;
+
+    // rotation, convert degrees to radians
+    float cosR = cos(rotation);
+    float sinR = sin(rotation);
+    uv = mat2(cosR, -sinR, sinR, cosR) * uv;
+
+    // translate back and add additional translation
+    uv += 0.5 + translation;
+
+    return uv;
+}
+
 void main() {
+    // recreating a blender node setup in GLSL
+    // get uv coordinates
     vec2 uv = gl_FragCoord.xy / uResolution.xy;
 
-    // Scale coordinates
-    vec2 coord = uv * uScale;
+    // respresents mapping node from blender
+    vec2 mappedUV = applyMapping(uv, uMappingScale, uMappingRotation, uMappingTranslation);
 
-    // Distort coordinates using noise
-    float n = fbm(uv);
-    coord += n * 2.0; // distortion amount
+    // represents noise node from blender
+    float n = fbm(mappedUV); // Noise result from mapped coordinates
+    vec2 coord = mappedUV + n * uDistortion;
 
-    // Feed into Voronoi
-    float v = voronoi(coord);
+    // represents voronoi node from blender
+    float v = voronoi(coord * uScale);  // Apply scale before Voronoi
 
-    // Visualize
+    // Output 
     gl_FragColor = vec4(vec3(v), 1.0);
 }
