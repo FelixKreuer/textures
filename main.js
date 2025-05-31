@@ -61,7 +61,19 @@ function createProgram(vsSource, fsSource) {
   gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
   // Get location of uResolution
+  const uScaleLoc = gl.getUniformLocation(program, 'uScale');
+  const uDetailLoc = gl.getUniformLocation(program, 'uDetail');
+  const uRoughnessLoc = gl.getUniformLocation(program, 'uRoughness');
+  const uDistortionLoc = gl.getUniformLocation(program, 'uDistortion');
   const uResolution = gl.getUniformLocation(program, 'uResolution');
+
+  // === Set Default Uniform Values ===
+  const settings = {
+    scale: 3.5,
+    detail: 15.0,
+    roughness: 0.8,
+    distortion: 0.5,
+  };
 
   // Animation loop
   function render() {
@@ -70,7 +82,11 @@ function createProgram(vsSource, fsSource) {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     // Set the uResolution uniform
-    gl.uniform2f(uResolution, canvas.width, canvas.height);
+    gl.uniform1f(uScaleLoc, settings.scale);
+    gl.uniform1f(uDetailLoc, settings.detail);
+    gl.uniform1f(uRoughnessLoc, settings.roughness);
+    gl.uniform1f(uDistortionLoc, settings.distortion);
+    gl.uniform2f(uResolution, gl.canvas.width, gl.canvas.height);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);
