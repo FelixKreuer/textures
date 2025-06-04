@@ -51,47 +51,49 @@ float perlinNoise(vec2 uv) {
 }
 
 // fbm function to represent blender noise texture, uses perlin noise 
-float fbm(vec2 uv) {
+float fbm(vec2 uv, float scale, float detail, float roughness, float distortion) {
     float value = 0.0;
     float amplitude = 0.5;
-    float frequency = 1.0;
+    float frequency = scale;
 
-    int octaves = int(floor(uDetail));
-    float remainder = fract(uDetail); // Blend fractional octave if needed
+    int octaves = int(floor(detail));
+    float remainder = fract(detail);
 
-    for (int i = 0; i < 10; ++i) { // Max 10 octaves for safety
+    for (int i = 0; i < 10; ++i) {
         if (i >= octaves) break;
 
-        vec2 distortedUV = uv + uDistortion * vec2(
-            perlinNoise(uv + vec2(1.7, 9.2)),
-            perlinNoise(uv + vec2(8.3, 2.8))
+        vec2 distortionOffset = distortion * vec2(
+            //semi random offsets, usually takes completly random values, not needed for this purpose
+            perlinNoise(uv + vec2(1.3, 7.2)),
+            perlinNoise(uv + vec2(5.9, 2.5))
         );
 
-        value += amplitude * perlinNoise(distortedUV * frequency);
+        value += amplitude * perlinNoise((uv + distortionOffset) * frequency);
         frequency *= 2.0;
-        amplitude *= uRoughness;
+        amplitude *= roughness;
     }
 
-    // Optional: Add final fractional octave
     if (remainder > 0.0) {
-        vec2 distortedUV = uv + uDistortion * vec2(
-            perlinNoise(uv + vec2(1.7, 9.2)),
-            perlinNoise(uv + vec2(8.3, 2.8))
+        vec2 distortionOffset = distortion * vec2(
+            perlinNoise(uv + vec2(1.3, 7.2)),
+            perlinNoise(uv + vec2(5.9, 2.5))
         );
 
-        value += amplitude * remainder * perlinNoise(distortedUV * frequency);
+        value += amplitude * remainder * perlinNoise((uv + distortionOffset) * frequency);
     }
 
     return value;
 }
 
-// function to generate a voronoi pattenr
-float voronoi(vec2 uv) {
-    vec2 cell = floor(uv);
-    vec2 fractUV = fract(uv);
+
+// generates a single octave of voronoi
+float voronoiSingle(vec2 uv) {
+    vec2 cell = floor(uv); // get the cell coordinates
+    vec2 fractUV = fract(uv); // remainder of uv coordinates, position within the cell
     float minDist = 1.0;
-    for(int j = -1; j <= 1; ++j) {
-        for(int i = -1; i <= 1; ++i) {
+    // creates a grid around the cell, places pseudo random points in every cell, returns the shortest distance to a point
+    for (int j = -1; j <= 1; ++j) {
+        for (int i = -1; i <= 1; ++i) {
             vec2 neighbor = vec2(float(i), float(j));
             vec2 point = randomGradient(cell + neighbor) * 0.5 + 0.5 + neighbor;
             float dist = length(fractUV - point);
@@ -99,6 +101,38 @@ float voronoi(vec2 uv) {
         }
     }
     return minDist;
+}
+
+// voronoi function that generates multiple octaves of voronoi noise, similar to blender voronoi node
+float voronoi(vec2 uv, float scale, float detail) {
+    uv *= scale;
+
+    int octaves = int(floor(detail));
+    float remainder = fract(detail);
+
+    float result = 0.0;
+    float amplitude = 1.0; // how much an octave contributes
+    float frequency = 1.0; // how much an octave is zoomed in
+    float totalAmplitude = 0.0; //keeps track of all amplitudes to normalise the result
+    // go through every octave, consecutive octaves have double frequency and half amplitude
+    for (int i = 0; i < 10; ++i) {
+        if (i >= octaves) break;
+
+        result += voronoiSingle(uv * frequency) * amplitude;
+        totalAmplitude += amplitude;
+
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    // if there is a fractional octave, add it
+    if (remainder > 0.0) {
+        float last = voronoiSingle(uv * frequency);
+        result += last * amplitude * remainder;
+        totalAmplitude += amplitude * remainder;
+    }
+
+    // normalise
+    return result / totalAmplitude;
 }
 
 // Function that applies transformations, like in blender
@@ -128,13 +162,15 @@ void main() {
     // respresents mapping node from blender
     vec2 mappedUV = applyMapping(uv, uMappingScale, uMappingRotation, uMappingTranslation);
 
-    // represents noise node from blender
-    float n = fbm(mappedUV); // Noise result from mapped coordinates
-    vec2 coord = mappedUV + n * uDistortion;
+    float noiseA = fbm(mappedUV, 5.5, 10.0, 0.8, 4.0);
+    float voronoiA = voronoi(mappedUV + noiseA, 2.1, 0.0);
 
-    // represents voronoi node from blender
-    float v = voronoi(coord * uScale);  // Apply scale before Voronoi
+    float noiseB = fbm(mappedUV, 7.0, 10.0, 0.8, 0.5);
+    float voronoiB = voronoi(mappedUV + noiseB, 2.5, 4.2);
+
+    // Mix (darken mode: min)
+    float final = min(voronoiA, voronoiB);
 
     // Output 
-    gl_FragColor = vec4(vec3(v), 1.0);
+    gl_FragColor = vec4(vec3(final), 1.0);
 }
