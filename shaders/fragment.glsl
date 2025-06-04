@@ -2,15 +2,53 @@ precision mediump float;
 
 // blender noise texture options
 uniform vec2 uResolution;
-uniform float uScale;
-uniform float uDetail;
-uniform float uRoughness;
-uniform float uDistortion;
 
 // parameters for first mapping node
 uniform vec2 uMappingScale;
 uniform float uMappingRotation;
 uniform vec2 uMappingTranslation;
+
+// struct to represent color stops in a color ramp
+struct ColorStop {
+    float position; // from 0.0 to 1.0
+    vec3 color;     // RGB
+};
+// used to interpolate between two colors
+vec3 evaluateColorRamp(float t, ColorStop stopA, ColorStop stopB) {
+    // Clamp the input value to [0, 1]
+    t = clamp(t, 0.0, 1.0);
+
+    // Normalize t between stopA.position and stopB.position
+    float range = stopB.position - stopA.position;
+    float localT = (t - stopA.position) / range;
+
+    // Clamp again in case t is outside the two stop range
+    localT = clamp(localT, 0.0, 1.0);
+
+    // Linear interpolation between stopA.color and stopB.color
+    return mix(stopA.color, stopB.color, localT);
+}
+
+// used to create a grayscale ramp, similar to blender color ramp node with only black and white
+float grayscaleColorRamp(float t, float stopA, float stopB) {
+    // clamp stops to [0, 1], should not be needed, but just in case
+    stopA = clamp(stopA, 0.0, 1.0);
+    stopB = clamp(stopB, 0.0, 1.0);
+
+    // inverted or equal stops
+    if (stopA >= stopB) {
+        return t < stopA ? 0.0 : 1.0;
+    }
+
+    // interpolate between black and white
+    return clamp((t - stopA) / (stopB - stopA), 0.0, 1.0);
+}
+
+// used to mix two colors, similar to blender mix node
+vec3 mixColor(float fac, vec3 color1, vec3 color2) {
+    return mix(color1, color2, clamp(fac, 0.0, 1.0));
+}
+
 
 // generates pseudo random vectors
 vec2 randomGradient(vec2 p) {
@@ -170,7 +208,10 @@ void main() {
 
     // Mix (darken mode: min)
     float final = min(voronoiA, voronoiB);
+    //float gray = grayscaleColorRamp(final, 0.173, 0.732);
+    float gray = grayscaleColorRamp(final, 0.0, 1.0);
+    vec3 color = mixColor(gray, vec3(0.774, 0.345, 0.085), vec3(0.088, 0.043, 0.023));
 
-    // Output 
-    gl_FragColor = vec4(vec3(final), 1.0);
+    // Output
+    gl_FragColor = vec4(color, 1.0);
 }
