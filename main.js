@@ -65,6 +65,8 @@ function createProgram(vsSource, fsSource) {
   const uMappingScaleLoc = gl.getUniformLocation(program, 'uMappingScale');
   const uMappingRotationLoc = gl.getUniformLocation(program, 'uMappingRotation');
   const uMappingTranslationLoc = gl.getUniformLocation(program, 'uMappingTranslation');
+  const uColorALoc = gl.getUniformLocation(program, "uColorA");
+  const uColorBLoc = gl.getUniformLocation(program, "uColorB");
 
   // === Set Default Uniform Values ===
 
@@ -75,6 +77,11 @@ function createProgram(vsSource, fsSource) {
   translateX: 0.0,
   translateY: 0.0,
 };
+
+  const colors = {
+      colorA: [0.774, 0.370, 0.085],
+      colorB: [0.088, 0.043, 0.023],
+  };
 
   // Animation loop
   function render() {
@@ -87,6 +94,8 @@ function createProgram(vsSource, fsSource) {
     gl.uniform2f(uMappingScaleLoc, mapping.scaleX, mapping.scaleY);
     gl.uniform1f(uMappingRotationLoc, mapping.rotation);
     gl.uniform2f(uMappingTranslationLoc, mapping.translateX, mapping.translateY);
+    gl.uniform3f(uColorALoc, ...colors.colorA);
+    gl.uniform3f(uColorBLoc, ...colors.colorB);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);

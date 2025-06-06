@@ -7,6 +7,10 @@ uniform vec2 uResolution;
 uniform vec2 uMappingScale;
 uniform float uMappingRotation;
 uniform vec2 uMappingTranslation;
+// parameters for the final color
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+
 
 // struct to represent color stops in a color ramp
 struct ColorStop {
@@ -46,7 +50,7 @@ float grayscaleColorRamp(float t, float stopA, float stopB) {
 
 // used to mix two colors, similar to blender mix node
 vec3 mixColor(float fac, vec3 color1, vec3 color2) {
-    return mix(color1, color2, clamp(fac, 0.0, 1.0));
+    return mix(color1, color2, fac);
 }
 
 
@@ -193,7 +197,7 @@ vec2 applyMapping(vec2 uv, vec2 scale, float rotation, vec2 translation) {
 }
 
 void main() {
-    // recreating a blender node setup in GLSL
+    // this part is used to create the basic wood texture
     // get uv coordinates
     vec2 uv = gl_FragCoord.xy / uResolution.xy;
 
@@ -210,8 +214,10 @@ void main() {
     float final = min(voronoiA, voronoiB);
     //float gray = grayscaleColorRamp(final, 0.173, 0.732);
     float gray = grayscaleColorRamp(final, 0.0, 1.0);
-    vec3 color = mixColor(gray, vec3(0.774, 0.345, 0.085), vec3(0.088, 0.043, 0.023));
+    vec3 color = mixColor(gray, uColorA, uColorB);
 
+    // this part is used to add knots to the wood texture
+    /* TODO */
     // Output
     gl_FragColor = vec4(color, 1.0);
 }
