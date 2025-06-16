@@ -68,20 +68,35 @@ function createProgram(vsSource, fsSource) {
   const uColorALoc = gl.getUniformLocation(program, "uColorA");
   const uColorBLoc = gl.getUniformLocation(program, "uColorB");
 
+
+  function normalizeColor(rgb) {
+    return rgb.map(v => v / 255.0);
+  }
+
   // === Set Default Uniform Values ===
+  const gui = new dat.GUI();
 
   const mapping = {
-  scaleX: 0.45,
-  scaleY: 5.5,
-  rotation: 0.0,        // in radians
-  translateX: 0.0,
-  translateY: 0.0,
-};
+    scaleX: 0.45,
+    scaleY: 5.5,
+    rotation: 0.0,        // in radians
+    translateX: 0.0,
+    translateY: 0.0,
+  };
 
   const colors = {
       colorA: [0.774, 0.370, 0.085],
       colorB: [0.088, 0.043, 0.023],
   };
+  gui.add(mapping, 'scaleX', 0.01, 10).step(0.01).name('Scale X');
+  gui.add(mapping, 'scaleY', 0.01, 10).step(0.01).name('Scale Y');
+  gui.add(mapping, 'rotation', -Math.PI, Math.PI).step(0.01).name('Rotation');
+  gui.add(mapping, 'translateX', -1.0, 1.0).step(0.01).name('Translate X');
+  gui.add(mapping, 'translateY', -1.0, 1.0).step(0.01).name('Translate Y');
+
+  gui.addColor(colors, 'colorA').name('Color A');
+  gui.addColor(colors, 'colorB').name('Color B');
+
 
   // Animation loop
   function render() {
@@ -89,13 +104,12 @@ function createProgram(vsSource, fsSource) {
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Background color
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Set the uResolution uniform
     gl.uniform2f(uResolution, gl.canvas.width, gl.canvas.height);
     gl.uniform2f(uMappingScaleLoc, mapping.scaleX, mapping.scaleY);
     gl.uniform1f(uMappingRotationLoc, mapping.rotation);
     gl.uniform2f(uMappingTranslationLoc, mapping.translateX, mapping.translateY);
-    gl.uniform3f(uColorALoc, ...colors.colorA);
-    gl.uniform3f(uColorBLoc, ...colors.colorB);
+    gl.uniform3f(uColorALoc, ...normalizeColor(colors.colorA));
+    gl.uniform3f(uColorBLoc, ...normalizeColor(colors.colorB));
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);
