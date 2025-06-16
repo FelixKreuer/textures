@@ -76,6 +76,34 @@ function createProgram(vsSource, fsSource) {
   // === Set Default Uniform Values ===
   const gui = new dat.GUI();
 
+  function resetValues() {
+  Object.assign(mapping, defaultMapping);
+  Object.assign(colors, defaultColors);
+
+  // Needed to update GUI view
+  for (let controller of gui.__controllers) {
+    controller.updateDisplay();
+  }
+  for (let f of gui.__folders) {
+    for (let controller of f.__controllers) {
+      controller.updateDisplay();
+    }
+  }
+}
+
+  const defaultMapping = {
+    scaleX: 0.45,
+    scaleY: 5.5,
+    rotation: 0.0,
+    translateX: 0.0,
+    translateY: 0.0,
+  };
+
+  const defaultColors = {
+    colorA: [198, 94, 22],
+    colorB: [22, 11, 6],
+  };
+
   const mapping = {
     scaleX: 0.45,
     scaleY: 5.5,
@@ -85,17 +113,23 @@ function createProgram(vsSource, fsSource) {
   };
 
   const colors = {
-      colorA: [0.774, 0.370, 0.085],
-      colorB: [0.088, 0.043, 0.023],
+    colorA: [198, 94, 22],
+    colorB: [22, 11, 6],
   };
-  gui.add(mapping, 'scaleX', 0.01, 10).step(0.01).name('Scale X');
-  gui.add(mapping, 'scaleY', 0.01, 10).step(0.01).name('Scale Y');
-  gui.add(mapping, 'rotation', -Math.PI, Math.PI).step(0.01).name('Rotation');
-  gui.add(mapping, 'translateX', -1.0, 1.0).step(0.01).name('Translate X');
-  gui.add(mapping, 'translateY', -1.0, 1.0).step(0.01).name('Translate Y');
+  const mappingFolder = gui.addFolder('Mapping');
+  mappingFolder.add(mapping, 'scaleX', 0.01, 10).step(0.01);
+  mappingFolder.add(mapping, 'scaleY', 0.01, 10).step(0.01);
+  mappingFolder.add(mapping, 'rotation', -Math.PI, Math.PI).step(0.01);
+  mappingFolder.add(mapping, 'translateX', -1.0, 1.0).step(0.01);
+  mappingFolder.add(mapping, 'translateY', -1.0, 1.0).step(0.01);
+  mappingFolder.open();
 
-  gui.addColor(colors, 'colorA').name('Color A');
-  gui.addColor(colors, 'colorB').name('Color B');
+  const colorFolder = gui.addFolder('Colors');
+  colorFolder.addColor(colors, 'colorA');
+  colorFolder.addColor(colors, 'colorB');
+  colorFolder.open();
+
+  gui.add({ reset: resetValues }, 'reset').name('Reset');
 
 
   // Animation loop
