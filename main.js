@@ -3,6 +3,8 @@ const gl = canvas.getContext('webgl', { alpha: false, preserveDrawingBuffer: tru
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
+//canvas.width = 256; // Set a fixed width
+//canvas.height = 256; // Set a fixed height
 
 // === Shader loading ===
 async function loadShaderSource(url) {
@@ -67,6 +69,11 @@ function createProgram(vsSource, fsSource) {
   const uMappingTranslationLoc = gl.getUniformLocation(program, 'uMappingTranslation');
   const uColorALoc = gl.getUniformLocation(program, "uColorA");
   const uColorBLoc = gl.getUniformLocation(program, "uColorB");
+  const uWaveScale = gl.getUniformLocation(program, 'uWaveScale');
+  const uWaveDistortion = gl.getUniformLocation(program, 'uWaveDistortion');
+  const uWaveDetail = gl.getUniformLocation(program, 'uWaveDetail');
+  const uWaveDetailScale = gl.getUniformLocation(program, 'uWaveDetailScale');
+  const uWaveDetailRoughness = gl.getUniformLocation(program, 'uWaveDetailRoughness');
 
 
   function normalizeColor(rgb) {
@@ -92,9 +99,9 @@ function createProgram(vsSource, fsSource) {
 }
 
   const defaultMapping = {
-    scaleX: 0.45,
-    scaleY: 5.5,
-    rotation: 0.0,
+    scaleX: 5.0,
+    scaleY: 0.5,
+    rotation: 0.0,   
     translateX: 0.0,
     translateY: 0.0,
   };
@@ -105,23 +112,38 @@ function createProgram(vsSource, fsSource) {
   };
 
   const mapping = {
-    scaleX: 0.45,
-    scaleY: 5.5,
-    rotation: 0.0,        // in radians
-    translateX: 0.0,
-    translateY: 0.0,
+    ...defaultMapping
   };
 
   const colors = {
     colorA: [198, 94, 22],
     colorB: [22, 11, 6],
   };
+
+  const defaultWave = {
+    scale: 10.0,
+    distortion: 50.0,
+    detail: 15.0,
+    detailScale: 0.5,
+    detailRoughness: 0.5
+  };
+
+  const wave = { ...defaultWave };
+
+  const waveFolder = gui.addFolder("Wave Texture");
+  waveFolder.add(wave, 'scale', 8.0, 15.0);
+  waveFolder.add(wave, 'distortion', 40.0, 60.0);
+  waveFolder.add(wave, 'detail', 10.0, 15.0);
+  waveFolder.add(wave, 'detailScale', 0.01, 1.0);
+  waveFolder.add(wave, 'detailRoughness', 0.0, 1.0);
+  waveFolder.open();
+
   const mappingFolder = gui.addFolder('Mapping');
   mappingFolder.add(mapping, 'scaleX', 0.01, 10).step(0.01);
   mappingFolder.add(mapping, 'scaleY', 0.01, 10).step(0.01);
   mappingFolder.add(mapping, 'rotation', -Math.PI, Math.PI).step(0.01);
-  mappingFolder.add(mapping, 'translateX', -1.0, 1.0).step(0.01);
-  mappingFolder.add(mapping, 'translateY', -1.0, 1.0).step(0.01);
+  mappingFolder.add(mapping, 'translateX', -10.0, 10.0).step(0.01);
+  mappingFolder.add(mapping, 'translateY', -10.0, 10.0).step(0.01);
   mappingFolder.open();
 
   const colorFolder = gui.addFolder('Colors');
@@ -144,6 +166,12 @@ function createProgram(vsSource, fsSource) {
     gl.uniform2f(uMappingTranslationLoc, mapping.translateX, mapping.translateY);
     gl.uniform3f(uColorALoc, ...normalizeColor(colors.colorA));
     gl.uniform3f(uColorBLoc, ...normalizeColor(colors.colorB));
+
+    gl.uniform1f(uWaveScale, wave.scale);
+    gl.uniform1f(uWaveDistortion, wave.distortion);
+    gl.uniform1f(uWaveDetail, wave.detail);
+    gl.uniform1f(uWaveDetailScale, wave.detailScale);
+    gl.uniform1f(uWaveDetailRoughness, wave.detailRoughness);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);
