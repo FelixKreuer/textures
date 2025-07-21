@@ -5,7 +5,8 @@ uniform vec2 uResolution;
 
 // parameters for first mapping node
 uniform vec2 uMappingScale;
-uniform float uMappingRotation;
+const float PI = 3.1415926535897932384626433832795;
+float uMappingRotation = PI / 2.0;
 uniform vec2 uMappingTranslation;
 
 // parameters for the final color
@@ -15,9 +16,30 @@ uniform vec3 uColorB;
 // wave texture parameters
 uniform float uWaveScale;
 uniform float uWaveDistortion;
-uniform float uWaveDetail;
+float uWaveDetail = 15.0;
 uniform float uWaveDetailScale;
-uniform float uWaveDetailRoughness;
+float uWaveDetailRoughness = 0.9;
+
+uniform vec2 uKnotPos;    
+float uKnotInnerR = 0.03;
+float uKnotOuterR = 0.1;
+uniform float uKnotTwist;
+uniform float uKnotPinch;  
+
+float uKnotInnerFrequency = 1000.0;
+float uKnotInnerDistortion = 7.2;
+float uKnotInnerDetail = 10.0;
+uniform float uKnotInnerDetailScale;
+float uKnotInnerDetailRoughness = 0.5;
+
+
+uniform float uKnotDistortIrregularity;
+uniform float uKnotDistortFrequency;
+uniform float uKnotDistortDetail;
+float uKnotDistortRoughness = 0.5;
+
+uniform bool uKnotEnabled;
+
 
 
 // struct to represent color stops in a color ramp
@@ -25,35 +47,83 @@ struct ColorStop {
     float position; // from 0.0 to 1.0
     vec3 color;     // RGB
 };
-// used to interpolate between two colors
-vec3 evaluateColorRamp(float t, ColorStop stopA, ColorStop stopB) {
-    // Clamp the input value to [0, 1]
-    t = clamp(t, 0.0, 1.0);
 
-    // Normalize t between stopA.position and stopB.position
-    float range = stopB.position - stopA.position;
-    float localT = (t - stopA.position) / range;
-
-    // Clamp again in case t is outside the two stop range
-    localT = clamp(localT, 0.0, 1.0);
-
-    // Linear interpolation between stopA.color and stopB.color
-    return mix(stopA.color, stopB.color, localT);
+float easeInterpolate(float t) {
+    // Ease in-out (smoothstep)
+    return t * t * (3.0 - 2.0 * t);
 }
 
+// Cubic B-spline basis functions
+float B0(float t) {
+    return ((1.0 - t) * (1.0 - t) * (1.0 - t)) / 6.0;
+}
+float B1(float t) {
+    return (3.0 * t * t * t - 6.0 * t * t + 4.0) / 6.0;
+}
+float B2(float t) {
+    return (-3.0 * t * t * t + 3.0 * t * t + 3.0 * t + 1.0) / 6.0;
+}
+float B3(float t) {
+    return (t * t * t) / 6.0;
+}
+
+// Cubic B-spline grayscale interpolation (2 stops: stop0 and stop1)
+float bsplineGrayscale(float t, float stop0, float stop1) {
+
+    // Define 4 control points (ghost stops extrapolated from stop0 and stop1)
+    float c0 = 0.9;                  // ghost before stop0
+    float c1 = 0.60;
+    float c2 = 0.05;
+    float c3 = 0.0;                  // ghost after stop1
+
+    // Blend using basis functions
+    return c0 * B0(t) +
+           c1 * B1(t) +
+           c2 * B2(t) +
+           c3 * B3(t);
+}
+
+// interpMode: 0 = linear, 1 = bspline, 2 = ease
+float evaluateColorRampFloat(float t, ColorStop stopA, ColorStop stopB, int interpMode) {
+    t = clamp(t, 0.0, 1.0);
+    float range = stopB.position - stopA.position;
+    float localT = (t - stopA.position) / range;
+    localT = clamp(localT, 0.0, 1.0);
+
+    float interpT;
+    if (interpMode == 1) {
+        interpT = bsplineGrayscale(localT, stopB.position, stopA.position);
+        interpT = 1.0 - interpT; // Invert for correct direction
+    } else if (interpMode == 2) {
+        interpT = easeInterpolate(localT);
+    } else {
+        interpT = localT;
+    }
+    return mix(stopA.color.r, stopB.color.r, interpT);
+}
+
+vec3 evaluateColorRamp(float t, ColorStop stopA, ColorStop stopB, int interpMode) {
+    t = clamp(t, 0.0, 1.0);
+    float range = stopB.position - stopA.position;
+    float localT = (t - stopA.position) / range;
+    localT = clamp(localT, 0.0, 1.0);
+
+    float interpT;
+    if (interpMode == 1) {
+        interpT = bsplineGrayscale(localT, stopB.position, stopA.position);
+        interpT = 1.0 - interpT; // Invert for correct direction
+    } else if (interpMode == 2) {
+        interpT = easeInterpolate(localT);
+    } else {
+        interpT = localT;
+    }
+    return mix(stopA.color, stopB.color, interpT);
+}
 // used to create a grayscale ramp, similar to blender color ramp node with only black and white
 float grayscaleColorRamp(float t, float stopA, float stopB) {
-    // clamp stops to [0, 1], should not be needed, but just in case
-    stopA = clamp(stopA, 0.0, 1.0);
-    stopB = clamp(stopB, 0.0, 1.0);
-
-    // inverted or equal stops
-    if (stopA >= stopB) {
-        return t < stopA ? 0.0 : 1.0;
-    }
-
-    // interpolate between black and white
-    return clamp((t - stopA) / (stopB - stopA), 0.0, 1.0);
+    return evaluateColorRampFloat(t, 
+        ColorStop(stopA, vec3(0.0)), 
+        ColorStop(stopB, vec3(1.0)), 0);
 }
 
 // used to mix two colors, similar to blender mix node
@@ -61,17 +131,27 @@ vec3 mixColor(float fac, vec3 color1, vec3 color2) {
     return mix(color1, color2, fac);
 }
 
+float linearLight(float base, float blend) {
+    float result = (blend < 0.5)
+        ? base + 2.0 * blend - 1.0
+        : base + 2.0 * (blend - 0.5);
+    return clamp(result, 0.0, 1.0);
+}
 
+float mixLinearLight(float base, float blend, float fac) {
+    return mix(base, clamp(linearLight(base, blend), 0.0, 1.0), fac);
+}
+
+float mixScreen(float a, float b) {
+    return 1.0 - (1.0 - a) * (1.0 - b);
+}
+float mixDifference(float a, float b, float f) {
+    return mix(a, abs(a - b), f);
+}
 // generates pseudo random vectors
 vec2 randomGradient(vec2 p) {
     float angle = fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123) * 6.28318;
     return vec2(cos(angle), sin(angle));
-}
-vec2 randomVec2Offset(float seed) {
-    return vec2(
-        sin(seed * 12.9898 + 78.233) * 43758.5453,
-        cos(seed * 26.6511 + 34.196) * 24634.6345
-    );
 }
 float hash(vec2 p) {
     return fract(sin(dot(p ,vec2(127.1, 311.7))) * 43758.5453123);
@@ -82,60 +162,36 @@ float fade(float t) {
     return t * t * (3.0 - 2.0 * t);
 }
 
-// function for perlin noise
-float perlinNoise(vec2 uv) {
-    vec2 i0 = floor(uv);
-    vec2 f0 = fract(uv);
-
-    vec2 i1 = i0 + vec2(1.0, 0.0);
-    vec2 i2 = i0 + vec2(0.0, 1.0);
-    vec2 i3 = i0 + vec2(1.0, 1.0);
-
-    vec2 g0 = randomGradient(i0);
-    vec2 g1 = randomGradient(i1);
-    vec2 g2 = randomGradient(i2);
-    vec2 g3 = randomGradient(i3);
-
-    float d0 = dot(g0, f0 - vec2(0.0, 0.0));
-    float d1 = dot(g1, f0 - vec2(1.0, 0.0));
-    float d2 = dot(g2, f0 - vec2(0.0, 1.0));
-    float d3 = dot(g3, f0 - vec2(1.0, 1.0));
-
-    float tx = fade(f0.x);
-    float ty = fade(f0.y);
-
-    float a = mix(d0, d1, tx);
-    float b = mix(d2, d3, tx);
-    return mix(a, b, ty);
-}
 float noise(vec2 p) {
     vec2 i = floor(p);
-    vec2 f = fract(p);
+    vec2 j = fract(p);
 
-    // Four corners of the cell
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
+    // Four corners in 2D of a tile
+    float a = dot(randomGradient(i + vec2(0.0, 0.0)), j - vec2(0.0, 0.0));
+    float b = dot(randomGradient(i + vec2(1.0, 0.0)), j - vec2(1.0, 0.0));
+    float c = dot(randomGradient(i + vec2(0.0, 1.0)), j - vec2(0.0, 1.0));
+    float d = dot(randomGradient(i + vec2(1.0, 1.0)), j - vec2(1.0, 1.0));
 
     // Smooth interpolation
-    vec2 u = f * f * (3.0 - 2.0 * f);
+    vec2 u = j * j * (3.0 - 2.0 * j);
 
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    // Bilinear interpolation
+    float n = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    return 0.5 * (n + 1.0); // Normalize to [0, 1]
 }
 
+vec2 addDistortion(vec2 p, float distortion) {
+    vec2 offset;
+    offset.x = noise(p + vec2(5.2, 1.3));
+    offset.y = noise(p + vec2(1.7, 9.2));
+    return p + distortion * (offset * 2.0 - 1.0);
+}
 // fbm function to represent blender noise texture, uses perlin noise 
 float fbm(vec2 co, float scale, float detail, float roughness , float distortion) {
     vec2 p = co;
     p *= scale; // scale the coordinates
     if (distortion != 0.0) {
-        vec2 offsetX = randomVec2Offset(0.0);
-        vec2 offsetY = randomVec2Offset(1.0);
-
-        p += vec2(
-            noise(p + offsetX) * distortion,
-            noise(p + offsetY) * distortion
-        );
+        p = addDistortion(p, distortion);
     }
 
     float fscale = 1.0;
@@ -166,7 +222,6 @@ float fbm(vec2 co, float scale, float detail, float roughness , float distortion
     return 0.5 * (sum / maxAmp) + 0.5;
 }
 
-
 // generates a single octave of voronoi
 float voronoiSingle(vec2 uv) {
     vec2 cell = floor(uv); // get the cell coordinates
@@ -177,7 +232,7 @@ float voronoiSingle(vec2 uv) {
         for (int i = -1; i <= 1; ++i) {
             vec2 neighbor = vec2(float(i), float(j));
             vec2 point = randomGradient(cell + neighbor) * 0.5 + 0.5 + neighbor;
-            float dist = length(fractUV - point);
+            float dist = distance(fractUV, point);
             minDist = min(minDist, dist);
         }
     }
@@ -239,57 +294,185 @@ float wave(vec2 uv, float scale, float distortion, float detail, float detailSca
     // apply scale
     uv *= scale;
     float n;
-    n = uv.x * 20.0;
+    n = uv.x * 7.0;
     if (distortion != 0.0) {
         n += distortion * (fbm(uv * detailScale, 1.0, detail, detailRoughness, 0.0) * 2.0 - 1.0);
     }
     
-    return 0.5 + 0.5 * sin(n - 6.2831853);
+    return 0.5 + 0.5 * sin(n);
 }
 
+// Inigo Quilez-style polynomial smooth min (C¹ continuous)
+float polySmoothMin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// 2D Smooth Voronoi F1 using polynomial smooth minimum
+float smoothVoronoi(vec2 p, float smoothness, float scale) {
+    p *= scale;
+    vec2 cell = floor(p);
+    vec2 local = fract(p);
+
+    float minDist = 8.0;
+
+    for (int j = -2; j <= 2; ++j) {
+        for (int i = -2; i <= 2; ++i) {
+            vec2 offset = vec2(i, j);
+            vec2 neighbor = cell + offset;
+            vec2 feature = offset + hash(neighbor);
+            float dist = distance(local, feature);
+            minDist = polySmoothMin(minDist, dist, smoothness);
+        }
+    }
+
+    return minDist;
+}
+
+// Distance from point to knot center in UV space
+float distToKnot(vec2 p, vec2 knotPos) {
+    return distance(p, knotPos);
+}
+
+float distortedDistance(vec2 uv, vec2 center, float irregularity, float frequency, float detail, float roughness) {
+    vec2 offset = uv - center;
+    float angle = atan(offset.y, offset.x);
+    float radius = length(offset);
+
+    float angleNorm = angle / (2.0 * 3.14159265); // normalize to [0,1]
+    float noise = fbm(vec2(angleNorm * frequency, 0.0), detail, frequency, roughness, 0.0);
+
+    float bump = 1.0 + (noise - 0.5) * 2.0 * irregularity;
+
+    return radius * bump;
+}
+
+vec2 warpKnot(vec2 uv, vec2 knotPos, float innerR, float outerR, float twistAmount, float pinchAmount) {
+    vec2 offset = uv - knotPos;
+    float dist = distortedDistance(uv, knotPos, uKnotDistortIrregularity, uKnotDistortFrequency, uKnotDistortDetail, uKnotDistortRoughness); // tweakable
+    if (dist > outerR) return uv;
+    float falloff = smoothstep(outerR, innerR, dist);
+
+    // Normalized direction from knot to UV
+    vec2 dir = normalize(offset);
+
+    // based on log spiral 
+    float spiral = twistAmount * log(dist + 1.0) * falloff;
+
+    // spiral twist
+    float s = sin(spiral);
+    float c = cos(spiral);
+    vec2 rotated = vec2(
+        offset.x * c - offset.y * s,
+        offset.x * s + offset.y * c
+    );
+
+    // Radial pull-in for compression toward the knot
+    vec2 compressed = rotated * (1.0 - falloff * pinchAmount);
+
+    return knotPos + compressed;
+}
+
+float knotInnerRings(vec2 uv, vec2 knotPos, float frequency, float distortion, float detail, float detailScale, float detailRoughness) {
+    float dist = distance(uv, knotPos);
+
+    float noiseVal = 0.0;
+    if (distortion > 0.0) {
+        noiseVal = distortion * 10.0 * (fbm(uv * detailScale, 1.0, detail, detailRoughness, 0.0) * 2.0 - 1.0);
+    }
+
+    float rawRings = sin(dist * frequency + noiseVal);
+
+    // sharpen wave peaks
+    float sharpRings = pow((rawRings + 1.0) * 0.5, 4.0);
+
+    // add contrast
+    float contrastRings = smoothstep(0.4, 0.7, sharpRings);
+
+    return contrastRings;
+}
+
+float knotOuterBorder(vec2 uv, vec2 knotPos, float outerRadius, float borderWidth) {
+    float dist = distortedDistance(uv, knotPos, 0.35, 6.0, 411.0, 100.0);
+
+    // Make a smooth ring: 1.0 inside outerRadius - borderWidth to outerRadius + borderWidth
+    float ring = smoothstep(outerRadius + borderWidth, outerRadius, dist) - smoothstep(outerRadius, outerRadius - borderWidth, dist);
+    return ring; // 1.0 on the ring, 0 outside
+}
+
+
+
 void main() {
-    // this part is used to create the basic wood texture
-    // get uv coordinates
     vec2 uv = gl_FragCoord.xy / uResolution.xy;
 
-    // respresents mapping node from blender
-    vec2 mappedUV = applyMapping(uv, uMappingScale, uMappingRotation, uMappingTranslation);
-    float x = fbm(mappedUV, uWaveScale, uWaveDetail, uWaveDetailScale, uWaveDistortion);
-    x = wave(mappedUV, uWaveScale, uWaveDistortion, uWaveDetail, uWaveDetailScale, uWaveDetailRoughness);
+    vec2 warpedUV = uv;
+    if (uKnotEnabled) {
+        warpedUV = warpKnot(uv, uKnotPos, uKnotInnerR, uKnotOuterR, uKnotTwist, uKnotPinch);
+    }
+    vec2 mappedUV = applyMapping(warpedUV, uMappingScale, uMappingRotation, uMappingTranslation);
 
-    /* float noiseA = fbm(mappedUV, 5.5, 10.0, 0.8, 4.0);
+    float rings = wave(mappedUV, uWaveScale, uWaveDistortion, uWaveDetail, uWaveDetailScale, uWaveDetailRoughness);
+    float wood;
+    if (uKnotEnabled) {
+        float cleanDist = distance(warpedUV, uKnotPos);
+        float distortedDist = distortedDistance(warpedUV, uKnotPos, 0.25, 16.0, 14.0, 11.0);
+        float d = mix(cleanDist, distortedDist, step(cleanDist, uKnotOuterR));
+
+        float outerRing = smoothstep(uKnotInnerR * 0.9, uKnotInnerR * 1.1, d);
+        outerRing = 1.0 - outerRing;
+        outerRing = pow(outerRing, 2.0);
+
+        float innerRings = knotInnerRings(uv, uKnotPos, uKnotInnerFrequency, uKnotInnerDistortion, uKnotInnerDetail, uKnotInnerDetailScale, uKnotInnerDetailRoughness);
+        float innerArea = 1.0 - smoothstep(0.0, uKnotInnerR * 0.9, d);
+        float knotGrainNoise = fbm(mappedUV * 1.0, 13.0, 16.0, 10.6, 10.0);
+        float knotGrain = knotGrainNoise * 0.3 + 0.1; // scale grain contrast
+        innerRings *= knotGrain; // apply the grain to knot rings
+
+        float baseRings = rings * (1.0 - outerRing * 0.8);
+        wood = mix(baseRings, innerRings, innerArea);
+
+        vec2 noiseOffset = vec2(
+            fbm(warpedUV * 1.0, 1.0, 111.0, 1110.6, 101.0),
+            fbm((warpedUV + 7.3) * 1.0, 1.0, 111.0, 1011.6, 110.0)
+        );
+
+        float borderWidth = uKnotOuterR * 0.02; // 2% of outer radius
+        float borderStrength = 0.9;
+        vec2 distortedUV = warpedUV + (noiseOffset - 0.5) * borderStrength;
+
+        
+
+        float outerBorder = knotOuterBorder(distortedUV, uKnotPos, uKnotInnerR, borderWidth);
+        outerBorder = smoothstep(0.0, borderWidth, outerBorder);
+        // Darken wood inside the outer border ring
+        float borderDarkening = 1.0 - outerBorder * borderStrength;
+        wood *= borderDarkening;
+    }
+    else {
+        wood = rings;
+    }
+    
+
+    float noiseA = fbm(mappedUV, 5.5, 10.0, 0.8, 4.0);
     float voronoiA = voronoi(mappedUV + noiseA, 2.1, 0.0);
 
     float noiseB = fbm(mappedUV, 7.0, 10.0, 0.8, 0.5);
     float voronoiB = voronoi(mappedUV + noiseB, 2.5, 4.2);
 
-    // Mix (darken mode: min)
     float final = min(voronoiA, voronoiB);
-    //float gray = grayscaleColorRamp(final, 0.173, 0.732);
+    float gray = grayscaleColorRamp(final, 0.173, 0.732);
+
     
-    // knot generation, simple ring pattern WIP
-    vec3 knotColor = uColorB;  // darker color
-    float knotMask = 0.0;
+    vec2 knotUV = applyMapping(uv, vec2(10.0), 0.0, vec2(2.88, 10.0));
+    float value = smoothVoronoi(knotUV, 0.7, 0.25);
 
-    // knot center position TODO pseudo-randomize this
-    vec2 knotCenter = vec2(0.4, 0.6);
+    float screen = mixScreen(wood, gray);
+    float diffBlend = mixDifference(wood, gray, 0.02);
 
-    // distance from UV to the knot center
-    float dist = distance(uv, knotCenter);
+    float result = mixLinearLight(diffBlend, screen, 0.183);
+    result = mix(result, value, 0.2);
 
-    // generate ring pattern using sine function
-    float ringPattern = 0.5 + 0.5 * sin(40.0 * dist - 3.0); // 40 = ring frequency, 3 = phase offset
+    vec3 color = mixColor(result, uColorB, uColorA);
 
-    // falloff mask to fade rings outward
-    float falloff = smoothstep(0.1, 0.05, dist); // from radius 0.1 to 0.05 fadeout
-
-    // final knot mask
-    knotMask = ringPattern * falloff;
-    
-    // blend into main wood texture
-    color = mix(color, knotColor, knotMask * 0.8); // 0.8 = strength*/
-    vec3 color = mixColor(x, uColorA, uColorB);
-
-    // Output
     gl_FragColor = vec4(color, 1.0);
 }
