@@ -2,40 +2,42 @@ const canvas = document.getElementById('glcanvas');
 const gl = canvas.getContext('webgl2', { alpha: false, preserveDrawingBuffer: true });
 
 // === Shader loading ===
-async function loadShaderSource(url) {
-  const response = await fetch(url);
-  return await response.text();
+function getShaderSource(id) {
+  return document.getElementById(id).textContent;
 }
 
+// === Shader compilation and program linking ===
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-    throw new Error('Shader compile failed');
+    const info = gl.getShaderInfoLog(shader);
+    gl.deleteShader(shader);
+    throw new Error('Could not compile shader:\n' + info);
   }
   return shader;
 }
 
 function createProgram(vsSource, fsSource) {
-  const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
-  const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+  const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
   const program = gl.createProgram();
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
   gl.linkProgram(program);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error('Program link error:', gl.getProgramInfoLog(program));
-    throw new Error('Program link failed');
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error('Could not link program:\n' + info);
   }
   return program;
 }
 
 // === Main Init ===
 (async function init() {
-  const vsSource = await loadShaderSource('shaders/vertex.glsl');
-  const fsSource = await loadShaderSource('shaders/fragment.glsl');
+  const vsSource = getShaderSource('vertex-shader');
+  const fsSource = getShaderSource('fragment-shader');
   const program = createProgram(vsSource, fsSource);
   gl.useProgram(program);
 
@@ -110,8 +112,8 @@ function createProgram(vsSource, fsSource) {
     knotTwist: 3,
     knotPinch: 0.5, // New pinch parameter
     knotInnerDetailScale: 7.37, // Scale for inner rings detail
-    canvasWidth: 640,//window.innerWidth || 1280,
-    canvasHeight: 640,//window.innerHeight || 640,
+    canvasWidth: window.innerWidth || 1280,
+    canvasHeight: window.innerHeight || 640,
     knotDistortIrregularity: 0.5,
     knotDistortFrequency: 0.5,
     knotDistortDetail: 0.5,
