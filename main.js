@@ -1,10 +1,5 @@
 const canvas = document.getElementById('glcanvas');
-const gl = canvas.getContext('webgl', { alpha: false, preserveDrawingBuffer: true });
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-//canvas.width = 256; // Set a fixed width
-//canvas.height = 256; // Set a fixed height
+const gl = canvas.getContext('webgl2', { alpha: false, preserveDrawingBuffer: true });
 
 // === Shader loading ===
 async function loadShaderSource(url) {
@@ -65,18 +60,23 @@ function createProgram(vsSource, fsSource) {
   // Get location of uResolution
   const uResolution = gl.getUniformLocation(program, 'uResolution');
   const uMappingScaleLoc = gl.getUniformLocation(program, 'uMappingScale');
-  const uMappingRotationLoc = gl.getUniformLocation(program, 'uMappingRotation');
   const uMappingTranslationLoc = gl.getUniformLocation(program, 'uMappingTranslation');
   const uColorALoc = gl.getUniformLocation(program, "uColorA");
   const uColorBLoc = gl.getUniformLocation(program, "uColorB");
   const uWaveScale = gl.getUniformLocation(program, 'uWaveScale');
   const uWaveDistortion = gl.getUniformLocation(program, 'uWaveDistortion');
-  const uWaveDetail = gl.getUniformLocation(program, 'uWaveDetail');
   const uWaveDetailScale = gl.getUniformLocation(program, 'uWaveDetailScale');
-  const uWaveDetailRoughness = gl.getUniformLocation(program, 'uWaveDetailRoughness');
+  const uKnotPos = gl.getUniformLocation(program, 'uKnotPos');
+  const uKnotTwist = gl.getUniformLocation(program, 'uKnotTwist');
+  const uKnotPinch = gl.getUniformLocation(program, 'uKnotPinch');
+  const uKnotInnerDetailScale = gl.getUniformLocation(program, 'uKnotInnerDetailScale');
+  const uKnotDistortIrregularity = gl.getUniformLocation(program, 'uKnotDistortIrregularity');
+  const uKnotDistortFrequency = gl.getUniformLocation(program, 'uKnotDistortFrequency');
+  const uKnotDistortDetail = gl.getUniformLocation(program, 'uKnotDistortDetail');
+  const uKnotEnabled = gl.getUniformLocation(program, 'uKnotEnabled');
 
 
-  function normalizeColor(rgb) {
+  function normaliseColor(rgb) {
     return rgb.map(v => v / 255.0);
   }
 
@@ -84,31 +84,43 @@ function createProgram(vsSource, fsSource) {
   const gui = new dat.GUI();
 
   function resetValues() {
-  Object.assign(mapping, defaultMapping);
-  Object.assign(colors, defaultColors);
+    Object.assign(mapping, defaultMapping);
+    Object.assign(colors, defaultColors);
+    Object.assign(wave, defaultWave);
 
-  // Needed to update GUI view
-  for (let controller of gui.__controllers) {
-    controller.updateDisplay();
-  }
-  for (let f of gui.__folders) {
-    for (let controller of f.__controllers) {
+    // Needed to update GUI view
+    for (let controller of gui.__controllers) {
       controller.updateDisplay();
     }
+    // Update controllers in folders
+    Object.values(gui.__folders || {}).forEach(folder => {
+      folder.__controllers.forEach(controller => {
+        controller.updateDisplay();
+      });
+    });
   }
-}
 
   const defaultMapping = {
-    scaleX: 5.0,
-    scaleY: 0.5,
-    rotation: 0.0,   
+    scaleX: 0.4,
+    scaleY: 3.3,
     translateX: 0.0,
     translateY: 0.0,
+    knotPosX: 0.5,
+    knotPosY: 0.5,
+    knotTwist: 3,
+    knotPinch: 0.5, // New pinch parameter
+    knotInnerDetailScale: 7.37, // Scale for inner rings detail
+    canvasWidth: 640,//window.innerWidth || 1280,
+    canvasHeight: 640,//window.innerHeight || 640,
+    knotDistortIrregularity: 0.5,
+    knotDistortFrequency: 0.5,
+    knotDistortDetail: 0.5,
+    knotEnabled: true,
   };
 
   const defaultColors = {
-    colorA: [198, 94, 22],
-    colorB: [22, 11, 6],
+    colorA: [210,158,111],
+    colorB: [100,47,29],
   };
 
   const mapping = {
@@ -116,62 +128,91 @@ function createProgram(vsSource, fsSource) {
   };
 
   const colors = {
-    colorA: [198, 94, 22],
-    colorB: [22, 11, 6],
+    ...defaultColors
   };
 
   const defaultWave = {
     scale: 10.0,
     distortion: 50.0,
-    detail: 15.0,
-    detailScale: 0.5,
-    detailRoughness: 0.5
+    detailScale: 0.01,
   };
 
   const wave = { ...defaultWave };
 
-  const waveFolder = gui.addFolder("Wave Texture");
-  waveFolder.add(wave, 'scale', 8.0, 15.0);
-  waveFolder.add(wave, 'distortion', 40.0, 60.0);
-  waveFolder.add(wave, 'detail', 10.0, 15.0);
-  waveFolder.add(wave, 'detailScale', 0.01, 1.0);
-  waveFolder.add(wave, 'detailRoughness', 0.0, 1.0);
-  waveFolder.open();
-
-  const mappingFolder = gui.addFolder('Mapping');
-  mappingFolder.add(mapping, 'scaleX', 0.01, 10).step(0.01);
-  mappingFolder.add(mapping, 'scaleY', 0.01, 10).step(0.01);
-  mappingFolder.add(mapping, 'rotation', -Math.PI, Math.PI).step(0.01);
-  mappingFolder.add(mapping, 'translateX', -10.0, 10.0).step(0.01);
-  mappingFolder.add(mapping, 'translateY', -10.0, 10.0).step(0.01);
-  mappingFolder.open();
+  const canvasFolder = gui.addFolder('Image Size');
+  canvasFolder.add(mapping, 'canvasWidth', 100, 4096).step(1).name('Width').onChange(updateCanvasSize);
+  canvasFolder.add(mapping, 'canvasHeight', 100, 4096).step(1).name('Height').onChange(updateCanvasSize);
+  canvasFolder.open();
 
   const colorFolder = gui.addFolder('Colors');
-  colorFolder.addColor(colors, 'colorA');
-  colorFolder.addColor(colors, 'colorB');
+  colorFolder.addColor(colors, 'colorA').name('Base Color');
+  colorFolder.addColor(colors, 'colorB').name('Ring Color');
   colorFolder.open();
 
+  const mappingFolder = gui.addFolder('Transformation');
+  mappingFolder.add(mapping, 'scaleX', 0.4, 1.2).step(0.01).name('Scale X');
+  mappingFolder.add(mapping, 'scaleY', 3.3, 6).step(0.01).name('Scale Y');
+  mappingFolder.add(mapping, 'translateX', -5.0, 5.0).step(0.01).name('Translate X');
+  mappingFolder.add(mapping, 'translateY', -5.0, 5.0).step(0.01).name('Translate Y');
+  mappingFolder.open();
+
+
+  const waveFolder = gui.addFolder("Growth Ring Options");
+  waveFolder.add(wave, 'scale', 6.0, 15.0).name('Scale');
+  waveFolder.add(wave, 'distortion', 30.0, 60.0).name('Distortion');
+  waveFolder.add(wave, 'detailScale', 0.01, 0.2).step(0.001).name('Detail Scale');
+  waveFolder.open();
+
+  const knotFolder = gui.addFolder('Knot');
+  knotFolder.add(mapping, 'knotEnabled').name('Enable Knot');
+  knotFolder.add(mapping, 'knotPosX', 0.0, 1.0).step(0.01).name('Knot Pos X');
+  knotFolder.add(mapping, 'knotPosY', 0.0, 1.0).step(0.01).name('Knot Pos Y');
+  knotFolder.add(mapping, 'knotTwist', -Math.PI * 2, Math.PI * 2).step(0.01).name('Knot Twist');
+  knotFolder.add(mapping, 'knotPinch', 0.0, 1.0).step(0.01).name('Knot Size');
+  knotFolder.add(mapping, 'knotDistortIrregularity', 0.0, 5.0).step(0.01).name('Irregularity');
+  knotFolder.add(mapping, 'knotDistortFrequency', 0.0, 5.0).step(0.01).name('Frequency');
+  knotFolder.add(mapping, 'knotDistortDetail', 0.0, 5.0).step(0.01).name('Detail');
+  knotFolder.open();
+
+  const knotInnerFolder = gui.addFolder('Knot Inner Rings');
+  knotInnerFolder.add(mapping, 'knotInnerDetailScale', 0.0, 10.0).step(0.01).name('Ring Distortion');
+  knotInnerFolder.open();
+
+  
+  function updateCanvasSize() {
+    canvas.width = mapping.canvasWidth;
+    canvas.height = mapping.canvasHeight;
+  }
   gui.add({ reset: resetValues }, 'reset').name('Reset');
 
 
   // Animation loop
   function render() {
+    updateCanvasSize(); // Ensure canvas size is updated
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Background color
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.uniform2f(uResolution, gl.canvas.width, gl.canvas.height);
     gl.uniform2f(uMappingScaleLoc, mapping.scaleX, mapping.scaleY);
-    gl.uniform1f(uMappingRotationLoc, mapping.rotation);
     gl.uniform2f(uMappingTranslationLoc, mapping.translateX, mapping.translateY);
-    gl.uniform3f(uColorALoc, ...normalizeColor(colors.colorA));
-    gl.uniform3f(uColorBLoc, ...normalizeColor(colors.colorB));
+    gl.uniform3f(uColorALoc, ...normaliseColor(colors.colorA));
+    gl.uniform3f(uColorBLoc, ...normaliseColor(colors.colorB));
 
     gl.uniform1f(uWaveScale, wave.scale);
     gl.uniform1f(uWaveDistortion, wave.distortion);
-    gl.uniform1f(uWaveDetail, wave.detail);
     gl.uniform1f(uWaveDetailScale, wave.detailScale);
-    gl.uniform1f(uWaveDetailRoughness, wave.detailRoughness);
+
+    gl.uniform2f(uKnotPos, mapping.knotPosX, mapping.knotPosY);
+    gl.uniform1f(uKnotTwist, mapping.knotTwist);
+    gl.uniform1f(uKnotPinch, mapping.knotPinch); // Set the pinch amount
+
+    gl.uniform1f(uKnotInnerDetailScale, mapping.knotInnerDetailScale);
+
+    gl.uniform1f(uKnotDistortIrregularity, mapping.knotDistortIrregularity);
+    gl.uniform1f(uKnotDistortFrequency, mapping.knotDistortFrequency);
+    gl.uniform1f(uKnotDistortDetail, mapping.knotDistortDetail);
+    gl.uniform1i(uKnotEnabled, mapping.knotEnabled ? 1 : 0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(render);
